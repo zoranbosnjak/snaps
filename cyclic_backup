@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright 2018 Zoran Bošnjak
+
+# Author: Zoran Bošnjak <zoran.bosnjak@via.si>
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+import argparse
+import os
+import subprocess
+from datetime import datetime, timedelta
+
+units = {
+    'second':   timedelta(seconds=1),
+    'minute':   timedelta(seconds=60),
+    'hour':     timedelta(seconds=3600),
+    'day':      timedelta(days=1),
+    'week':     timedelta(days=7),
+    'month':    timedelta(days=30),
+    }
+
+def validInterval(s):
+    for unit, delta in units.items():
+        if s.endswith(unit):
+            n = float(s[:-len(unit)])
+            return n*delta
+    msg = "Given Datetime ({}) not valid! Expected ...".format(s)
+    raise argparse.ArgumentTypeError(msg)
+
+class Interval(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        val = getattr(namespace, self.dest) or []
+        n = int(values[0])
+        delta = validInterval(values[1])
+        val.append((delta, n))
+        setattr(namespace, self.dest, val)
+
+class History(object):
+    def __init__(self, *keep):
+        self.intervals = sorted(*keep, key=lambda a: a[0])
+
+    def probe(self, now, snaps):
+        """Given current time and the list of backups, return:
+            - None: no action required
+            - iterator over the snaps to be removed
+        """
+
+        # time must be monotonic
+        snaps = sorted(snaps, reverse=True)
+        if not snaps:
+            return(iter([]))
+        last = snaps[0]
+        assert now >= last
+
+        # in case of empty interval list, take a snap and remove the rest
+        if not self.intervals:
+            return(iter(snaps))
+
+        (delta, n) = self.intervals[0]
+        assert n > 0
+
+        # If sampled too fast, no action is required.
+        if (now - last) < delta:
+            return None
+
+        # It's already certain that, snapshot is required,
+        # so return iterator over snaps to be removed.
+        snaps.insert(0, now)
+        return self.loop(snaps, self.intervals)
+
+    def loop(self, snaps, intervals):
+        for (delta, n) in intervals:
+            assert n > 0
+            if len(snaps) < 2:
+                return
+            if (snaps[0] - snaps[1]) < delta:
+                yield snaps[0]
+                snaps = snaps[1:]
+            snaps = snaps[n:]
+
+        # remove all remaining snaps
+        for i in snaps:
+            yield i
+
+def timeToRef(t):
+    """Create string reference from timestamp."""
+    return '{:04}-{:02}-{:02}_{:02}-{:02}-{:02}'.format(
+        t.year, t.month, t.day, t.hour, t.minute, t.second)
+
+def refToTime(ref):
+    """Create timestamp from string reference."""
+    try:
+        parts = ref.split('_')
+        assert len(parts) == 2
+        d,t = parts
+        (year, month, day) = list(map(int, d.split('-')))
+        (hour, minute, second) = list(map(int, t.split('-')))
+        return datetime(year, month, day, hour, minute, second)
+    except AssertionError:
+        return None
+
+class ShellHandler(object):
+    def __init__(self, cmd):
+        self.cmd = cmd
+
+    def __getattr__(self, name):
+        def run(*args):
+            cmd = self.cmd + ' ' + name + ' ' + ' '.join(args)
+            rv = subprocess.run(cmd, shell=True, check=True, stdout=subprocess.PIPE)
+            return [x.decode() for x in rv.stdout.splitlines()]
+        return run
+
+parser = argparse.ArgumentParser(description='snapshot backup')
+parser.add_argument('handler', help='target handler (executable)')
+parser.add_argument('-n', action='store_true', help='simulate only')
+parser.add_argument('--keep', action=Interval, nargs=2,
+    metavar=('N', 'M[{}]'.format('|'.join(units.keys()))),
+    default = []
+    )
+
+args = parser.parse_args()
+
+handler = ShellHandler(args.handler)
+history = History(tuple(args.keep))
+
+now = datetime.utcnow()
+handler.prepare()
+listing = [refToTime(x) for x in handler.list() if refToTime(x) is not None]
+result = history.probe(now, listing)
+if result is not None:
+    ref = timeToRef(now)
+    print('creating snapshot', ref)
+    handler.create(ref)
+    for i in result:
+        ref = timeToRef(i)
+        print('removing snapshot', ref)
+        handler.remove(ref)
+
