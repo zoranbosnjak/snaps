@@ -23,6 +23,8 @@ import os
 import subprocess
 from datetime import datetime, timedelta
 
+tolerance = 0.1     # when comparing times, allow some tolerance
+
 units = {
     'second':   timedelta(seconds=1),
     'minute':   timedelta(seconds=60),
@@ -49,6 +51,7 @@ class Interval(argparse.Action):
         setattr(namespace, self.dest, val)
 
 class History(object):
+
     def __init__(self, *keep):
         self.intervals = sorted(*keep, key=lambda a: a[0])
 
@@ -69,11 +72,12 @@ class History(object):
         if not self.intervals:
             return(iter(snaps))
 
+        # number of intervals must be positive
         (delta, n) = self.intervals[0]
         assert n > 0
 
         # If sampled too fast, no action is required.
-        if (now - last) < delta:
+        if (now - last) < (delta*(1.0 - tolerance)):
             return None
 
         # It's already certain that, snapshot is required,
@@ -86,7 +90,7 @@ class History(object):
             assert n > 0
             if len(snaps) < 2:
                 return
-            if (snaps[0] - snaps[1]) < delta:
+            if (snaps[0] - snaps[1]) < (delta*(1.0 - tolerance)):
                 yield snaps[0]
                 snaps = snaps[1:]
             snaps = snaps[n:]
@@ -125,7 +129,7 @@ class ShellHandler(object):
 
 parser = argparse.ArgumentParser(description='snapshot backup')
 parser.add_argument('handler', help='target handler (executable)')
-parser.add_argument('-n', action='store_true', help='simulate only')
+parser.add_argument('--verbose', action='store_true', help='verbose mode')
 parser.add_argument('--keep', action=Interval, nargs=2,
     metavar=('N', 'M[{}]'.format('|'.join(units.keys()))),
     default = []
@@ -136,16 +140,18 @@ args = parser.parse_args()
 handler = ShellHandler(args.handler)
 history = History(tuple(args.keep))
 
-now = datetime.utcnow()
+now = datetime.utcnow().replace(microsecond=0)
 handler.prepare()
 listing = [refToTime(x) for x in handler.list() if refToTime(x) is not None]
 result = history.probe(now, listing)
 if result is not None:
     ref = timeToRef(now)
-    print('creating snapshot', ref)
+    if args.verbose:
+        print('creating snapshot', ref)
     handler.create(ref)
     for i in result:
         ref = timeToRef(i)
-        print('removing snapshot', ref)
+        if args.verbose:
+            print('removing snapshot', ref)
         handler.remove(ref)
 
