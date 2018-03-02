@@ -50,18 +50,18 @@ case $action in
     "create")
         assert $(expr $# == 1) "expecting single argument (reference name)"
         ref=$1
-        zfs snapshot $dataset@$ref
+        zfs snapshot $dataset@cyclic-$ref
         ;;
 
     "remove")
         assert $(expr $# == 1) "expecting single argument (reference name)"
         ref=$1
-        zfs destroy $dataset@$ref
+        zfs destroy $dataset@cyclic-$ref
         ;;
 
     "list")
         assert $(expr $# == 0) "unexpected arguments $@"
-        zfs list -t snapshot -o name | grep "$dataset@" | sed 's/.*@//'
+        zfs list -t snapshot -o name | grep "$dataset@cyclic-" | sed 's/.*@cyclic-//'
         ;;
 
     *)
