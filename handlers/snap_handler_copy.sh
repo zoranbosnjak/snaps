@@ -20,7 +20,7 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 prog=$0
-usage="Usage: $prog {src_path} {dest_path} {dst_name} [prepare | create ref | remove ref | list]"
+usage="Usage: $prog {src_path} {dst_path} {dst_name} [prepare | create ref | remove ref | list]"
 
 assert () {
     condition=$1
