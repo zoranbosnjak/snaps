@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright 2018 Zoran Bošnjak
+
+# Author: Zoran Bošnjak <zoran.bosnjak@via.si>
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+import argparse
+import os
+import subprocess
+
+class Action(object):
+
+    def __init__(self, args):
+        self.args = args
+
+    def getListing(self, dataset, snapshot):
+        return 'zfs list -t snapshot -o name | grep "{}@{}" | sort'.format(dataset, snapshot)
+
+    def runSystem(self, cmd, dry_run=False):
+        if dry_run:
+            return []
+        rv = subprocess.run(cmd, shell=True, check=True, stdout=subprocess.PIPE)
+        return [x.decode() for x in rv.stdout.splitlines()]
+
+    def srcRsh(self):
+        if self.__class__ == Push: return ''
+        elif self.__class__ == Pull: return (args.rsh + ' ')
+        raise Exception('unexpected class: {}'.format(self.__class__))
+
+    def dstRsh(self):
+        if self.__class__ == Push: return (args.rsh + ' ')
+        elif self.__class__ == Pull: return ''
+        raise Exception('unexpected class: {}'.format(self.__class__))
+
+    def run(self):
+        args = self.args
+        srcListing = self.runSystem(self.srcRsh() + self.getListing(args.src, args.snapshot))
+        dstListing = self.runSystem(self.dstRsh() + self.getListing(args.dst, args.snapshot))
+
+        if not srcListing:
+            raise Exception('source listing empty')
+
+        if not dstListing:
+            print('Create first copy by hand, then re-run this command.')
+            print('Example command to create a first copy (use sudo as necessary):')
+            fst = srcListing[0]
+            _dataset, snap = fst.split('@')
+            cmd = '{}zfs send {} | {}zfs receive {}@{}'.format(self.srcRsh(), fst, self.dstRsh(), args.dst, snap)
+            print(cmd)
+            raise Exception('destination listing empty')
+
+        src = [i.split('@')[1] for i in srcListing]
+        dst = [i.split('@')[1] for i in dstListing]
+
+        if args.verbose:
+            print('src listing {}:'.format(args.src))
+            for i in src:
+                print('  {}'.format(i))
+
+            print('')
+            print('dst listing {}:'.format(args.dst))
+            for i in dst:
+                print('  {}'.format(i))
+
+            print('')
+
+        # remove old snapshots
+        for i in dst:
+            if not i in src:
+                cmd = '{}zfs destroy {}@{}'.format(self.dstRsh(), args.dst, i)
+                if args.verbose:
+                    print(cmd)
+                self.runSystem(cmd, args.dry_run)
+
+        # add new snapshots
+        base = dst[-1]
+        assert base in src, "base snapshot {} not found in source, unable to proceed".format(base)
+        ix = src.index(base)
+        required = src[ix:]
+        required = zip(required, required[1:])
+
+        for (a, b) in required:
+            base = args.src + '@' + a
+            tx = args.src + '@' + b
+            rx = args.dst + '@' + b
+            cmd = '{}zfs send -i {} {} | {}zfs receive -F {}'.format(self.srcRsh(), base, tx, self.dstRsh(), rx)
+            if args.verbose:
+                print(cmd)
+            self.runSystem(cmd, args.dry_run)
+
+class Push(Action):
+    pass
+
+class Pull(Action):
+    pass
+
+parser = argparse.ArgumentParser(description='zfs snapshot incremental sync tool')
+parser.add_argument('-v', '--verbose', action='store_true', help='verbose mode')
+parser.add_argument('-n', '--dry-run', action='store_true', help='do not perform sync action')
+parser.add_argument('-e', '--rsh', required=True, metavar='COMMAND', help='remote shell')
+parser.add_argument('--snapshot', required=True, metavar='PREFFIX', help='snapshot preffix')
+parser.add_argument('--src', required=True, metavar='dataset', help='dataset on the source side')
+parser.add_argument('--dst', required=True, metavar='dataset', help='dataset on the destination side')
+parser.add_argument('action', choices=['push', 'pull'])
+
+args = parser.parse_args()
+
+if args.action == 'push':
+    action = Push(args)
+elif args.action == 'pull':
+    action = Pull(args)
+else:
+    raise Exception('unexpected action: {}'.format(args.action))
+
+action.run()
+
