@@ -61,8 +61,7 @@ class History(object):
             - iterator over the snaps to be removed
         """
 
-        # time must be monotonic
-        snaps = sorted(snaps, reverse=True)
+        # time must be monotonic, snaps are sorted already
         if not snaps:
             return(iter([]))
         last = snaps[0]
@@ -80,10 +79,9 @@ class History(object):
         if (now - last) < (delta*(1.0 - tolerance)):
             return None
 
-        # It's already certain that, snapshot is required,
+        # It's already certain that snapshot is required,
         # so return iterator over snaps to be removed.
-        snaps.insert(0, now)
-        return self.loop(snaps, self.intervals)
+        return self.loop([now]+snaps, self.intervals)
 
     def loop(self, snaps, intervals):
         for (delta, n) in intervals:
@@ -142,13 +140,15 @@ history = History(tuple(args.keep))
 
 now = datetime.utcnow().replace(microsecond=0)
 handler.prepare()
-listing = [refToTime(x) for x in handler.list() if refToTime(x) is not None]
+listing = sorted(
+            [refToTime(x) for x in handler.list() if refToTime(x) is not None],
+            reverse=True)
 result = history.probe(now, listing)
 if result is not None:
     ref = timeToRef(now)
     if args.verbose:
         print('creating snapshot', ref)
-    handler.create(ref)
+    handler.create(ref, *tuple(map(timeToRef, listing)))
     for i in result:
         ref = timeToRef(i)
         if args.verbose:

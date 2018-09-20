@@ -20,7 +20,7 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 prog=$0
-usage="Usage: $prog {dataset} [prepare | create ref | remove ref | list]"
+usage="Usage: $prog {dataset} [prepare | create ref ... | remove ref | list]"
 
 assert () {
     condition=$1
@@ -48,7 +48,8 @@ case $action in
         ;;
 
     "create")
-        assert $(expr $# == 1) "expecting single argument (reference name)"
+        assert $(expr $# ">=" 1) "expecting {target ref} [{ref...}]"
+
         ref=$1
         zfs snapshot $dataset@cyclic-$ref
         ;;

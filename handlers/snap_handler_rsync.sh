@@ -19,9 +19,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-prog=$0
-usage="Usage: $prog {src_path} {dst_path} {dst_name} [prepare | create ref ... | remove ref | list]"
-
 assert () {
     condition=$1
     msg=$2
@@ -31,7 +28,37 @@ assert () {
     fi
 }
 
-if [ "$#" -lt 3 ]; then
+set -e
+set -u
+
+use_links="yes";
+
+usage="Usage: $(basename $0) [-c] [-e rsync exclude ...] {src_path} {dst_path} {dst_name} [prepare | create ref [ref-1 ...] | remove ref | list]"
+
+excludes=()
+# handle -e {exclude} ... options
+while getopts 'ce:' OPTION; do
+    case "$OPTION" in
+        c)
+            use_links="no";
+            ;;
+        e)
+            excludes+=("$OPTARG")
+            ;;
+        ?)
+            echo $usage >&2
+            exit 1
+            ;;
+    esac
+done
+shift "$(($OPTIND -1))"
+
+exclude=""
+for val in "${excludes[@]}"; do
+    exclude="$exclude --exclude $val";
+done
+
+if [ "$#" -lt 4 ]; then
     echo "Too few arguments!"
     echo $usage
     exit 1
@@ -46,28 +73,42 @@ shift
 shift
 shift
 
-ref=$1
-dst=$dstPath/$dstName@$ref
-
 case $action in
     "prepare")
+        assert $(expr $# == 0) "unexpected arguments $@"
         mkdir -p $dstPath
         [ -d $dstPath ] || exit 1
         ;;
 
     "create")
         assert $(expr $# ">=" 1) "expecting {target ref} [{ref...}]"
+        ref=$1
+        shift
+        dst=$dstPath/$dstName@$ref
         if [ -e $dst ]; then
             echo "$dst exists"
             exit 1
         fi
-        cp -a $srcPath $dst
+
+        cmd="rsync -a $exclude"
+        # no history
+        if [[ $use_links = "no" || $# -eq 0 ]]; then
+            $cmd $srcPath $dst
+        # history exists, use it to save space
+        else
+            prev=""
+            for i in $*; do
+                prev="$prev --link-dest=../$dstName@$i"
+            done
+            $cmd $prev $srcPath $dst
+        fi
         ;;
 
     "remove")
         assert $(expr $# == 1) "expecting single argument (reference name)"
         ref=$1
-        rm -r $dst
+        dst=$dstPath/$dstName@$ref
+        rm -rf $dst
         ;;
 
     "list")

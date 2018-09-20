@@ -97,7 +97,7 @@ handler_script [args] {action}
 Each handler shall support the following actions:
 
 * `prepare`: Prepare backup structure.
-* `create {ref}`: Create a backup with the name `{ref}`.
+* `create {ref} [{ref-1} {ref-2} ...]`: Create a backup with the name `{ref}`, where `{ref-1}`, `{ref-2}` ... are previous backup references (if any).
 * `remove {ref}`: Remove a backup with the name `{ref}`.
 * `list`: List existing backups, output one `{ref}` per line.
 
