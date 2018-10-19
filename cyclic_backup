@@ -132,6 +132,8 @@ parser.add_argument('--keep', action=Interval, nargs=2,
     metavar=('N', 'M[{}]'.format('|'.join(units.keys()))),
     default = []
     )
+parser.add_argument('--limit', type=int, help='limit number of old snapshots to consider')
+parser.add_argument('-n', '--dry-run', action='store_true', help='do not run actual backup, simulate only')
 
 args = parser.parse_args()
 
@@ -139,19 +141,24 @@ handler = ShellHandler(args.handler)
 history = History(tuple(args.keep))
 
 now = datetime.utcnow().replace(microsecond=0)
-handler.prepare()
+if not args.dry_run:
+    handler.prepare()
 listing = sorted(
             [refToTime(x) for x in handler.list() if refToTime(x) is not None],
             reverse=True)
+if args.limit is not None:
+    listing = listing[:(args.limit)]
 result = history.probe(now, listing)
 if result is not None:
     ref = timeToRef(now)
     if args.verbose:
         print('creating snapshot', ref)
-    handler.create(ref, *tuple(map(timeToRef, listing)))
+    if not args.dry_run:
+        handler.create(ref, *tuple(map(timeToRef, listing)))
     for i in result:
         ref = timeToRef(i)
         if args.verbose:
             print('removing snapshot', ref)
-        handler.remove(ref)
+        if not args.dry_run:
+            handler.remove(ref)
 
