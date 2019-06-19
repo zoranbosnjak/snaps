@@ -132,7 +132,7 @@ parser.add_argument('--keep', action=Interval, nargs=2,
     metavar=('N', 'M[{}]'.format('|'.join(units.keys()))),
     default = []
     )
-parser.add_argument('--limit', type=int, help='limit number of old snapshots to consider')
+parser.add_argument('--limit', type=int, help='limit number of old snapshots to consider for the handler')
 parser.add_argument('-n', '--dry-run', action='store_true', help='do not run actual backup, simulate only')
 
 args = parser.parse_args()
@@ -146,15 +146,16 @@ if not args.dry_run:
 listing = sorted(
             [refToTime(x) for x in handler.list() if refToTime(x) is not None],
             reverse=True)
-if args.limit is not None:
-    listing = listing[:(args.limit)]
 result = history.probe(now, listing)
 if result is not None:
     ref = timeToRef(now)
     if args.verbose:
         print('creating snapshot', ref)
     if not args.dry_run:
-        handler.create(ref, *tuple(map(timeToRef, listing)))
+        handlerListing = list(listing)
+        if args.limit is not None:
+            handlerListing = handlerListing[:(args.limit)]
+        handler.create(ref, *tuple(map(timeToRef, handlerListing)))
     for i in result:
         ref = timeToRef(i)
         if args.verbose:
