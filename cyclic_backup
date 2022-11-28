@@ -22,6 +22,7 @@ import argparse
 import os
 import subprocess
 from datetime import datetime, timedelta
+import time
 
 tolerance = 0.1     # when comparing times, allow some tolerance
 
@@ -48,6 +49,27 @@ class Interval(argparse.Action):
         n = int(values[0])
         delta = validInterval(values[1])
         val.append((delta, n))
+        setattr(namespace, self.dest, val)
+
+class Loop(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, validInterval(values[0]))
+
+class TimeGuard(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        cmp = values[0]
+        if values[0] == 'LT':
+            cmp = lambda x,y: x < y
+        elif values[0] == 'GT':
+            cmp = lambda x,y: x > y
+        else:
+            raise Exception('unsupported comparator, expecting [LT, GT]')
+        t0 = time.strptime(values[1], '%H:%M:%S')
+        def guard(t):
+            t00 = t.replace(hour=t0.tm_hour, minute=t0.tm_min, second=t0.tm_sec)
+            return cmp(t, t00)
+        val = getattr(namespace, self.dest) or []
+        val.append(guard)
         setattr(namespace, self.dest, val)
 
 class History(object):
@@ -134,32 +156,44 @@ parser.add_argument('--keep', action=Interval, nargs=2,
     )
 parser.add_argument('--limit', type=int, help='limit number of old snapshots to consider for the handler')
 parser.add_argument('-n', '--dry-run', action='store_true', help='do not run actual backup, simulate only')
+parser.add_argument('--loop', action=Loop, nargs=1, metavar=('L[{}]'.format('|'.join(units.keys()))),
+    help="loop forever")
+parser.add_argument('--time-guard', action=TimeGuard, nargs=2,
+    metavar=('CMP', 'TIME'),
+    default = [],
+    help="time conditions, e.g. LT 04:00:00")
 
 args = parser.parse_args()
 
 handler = ShellHandler(args.handler)
 history = History(tuple(args.keep))
 
-now = datetime.utcnow().replace(microsecond=0)
-if not args.dry_run:
-    handler.prepare()
-listing = sorted(
-            [refToTime(x) for x in handler.list() if refToTime(x) is not None],
-            reverse=True)
-result = history.probe(now, listing)
-if result is not None:
-    ref = timeToRef(now)
-    if args.verbose:
-        print('creating snapshot', ref)
-    if not args.dry_run:
-        handlerListing = list(listing)
-        if args.limit is not None:
-            handlerListing = handlerListing[:(args.limit)]
-        handler.create(ref, *tuple(map(timeToRef, handlerListing)))
-    for i in result:
-        ref = timeToRef(i)
-        if args.verbose:
-            print('removing snapshot', ref)
+while True:
+    now = datetime.utcnow().replace(microsecond=0)
+    time_checks = [tg(now) for tg in args.time_guard]
+    if all(time_checks):
         if not args.dry_run:
-            handler.remove(ref)
+            handler.prepare()
+        listing = sorted(
+                    [refToTime(x) for x in handler.list() if refToTime(x) is not None],
+                    reverse=True)
+        result = history.probe(now, listing)
+        if result is not None:
+            ref = timeToRef(now)
+            if args.verbose:
+                print('creating snapshot', ref)
+            if not args.dry_run:
+                handlerListing = list(listing)
+                if args.limit is not None:
+                    handlerListing = handlerListing[:(args.limit)]
+                handler.create(ref, *tuple(map(timeToRef, handlerListing)))
+            for i in result:
+                ref = timeToRef(i)
+                if args.verbose:
+                    print('removing snapshot', ref)
+                if not args.dry_run:
+                    handler.remove(ref)
+    if args.loop is None:
+        break
+    time.sleep(args.loop.total_seconds())
 
