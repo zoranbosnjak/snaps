@@ -62,7 +62,7 @@ case $action in
 
     "list")
         assert $(expr $# == 0) "unexpected arguments $@"
-        zfs list -t snapshot -o name | grep "$dataset@cyclic-" | sed 's/.*@cyclic-//'
+        zfs list -t snapshot -o name 2> /dev/null | grep "$dataset@cyclic-" | sed 's/.*@cyclic-//'
         ;;
 
     *)

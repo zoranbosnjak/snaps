@@ -28,7 +28,7 @@ class Action(object):
         self.args = args
 
     def getListing(self, dataset, snapshot):
-        return 'zfs list -t snapshot -o name | grep "{}@{}" | sort'.format(dataset, snapshot)
+        return 'zfs list -t snapshot -o name 2> /dev/null | grep "{}@{}" | sort'.format(dataset, snapshot)
 
     def runSystem(self, cmd, dry_run=False):
         if dry_run:

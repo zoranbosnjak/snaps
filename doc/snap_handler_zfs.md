@@ -21,20 +21,20 @@ Create a snapshot of dataset `datapool/test`.
 sudo zfs create datapool/test -o mountpoint=/mnt/test
 
 # check existence of the dataset
-sudo zfs list -o name | grep datapool/test
+sudo zfs list -o name 2> /dev/null | grep datapool/test
 
 # ... and no snapshots yet
-sudo zfs list -t snapshot -o name | grep datapool/test
+sudo zfs list -t snapshot -o name 2> /dev/null | grep datapool/test
 sudo snap_handler_zfs.sh datapool/test list
 
 # check zfs handler (create action, list action)
 sudo snap_handler_zfs.sh datapool/test create ref1
-sudo zfs list -t snapshot -o name | grep datapool/test
+sudo zfs list -t snapshot -o name 2> /dev/null | grep datapool/test
 sudo snap_handler_zfs.sh datapool/test list
 
 # check zfs handler (remove action, list action)
 sudo snap_handler_zfs.sh datapool/test remove ref1
-sudo zfs list -t snapshot -o name | grep datapool/test
+sudo zfs list -t snapshot -o name 2> /dev/null | grep datapool/test
 sudo snap_handler_zfs.sh datapool/test list
 ```
 
