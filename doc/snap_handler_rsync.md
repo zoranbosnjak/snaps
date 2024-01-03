@@ -4,10 +4,11 @@ This is a simple *snap* handler to sync folders using rsync tool.
 Unchanged files are linked (using hard links), so that less space is used.
 
 ```bash
-Usage: snap_handler_rsync.sh [-c] [-e rsync_exclude_argument ...] {src_path} {dest_path} {dst_name} [prepare | create ref ... | remove ref | list]
+Usage: snap_handler_rsync.sh [-c] [-o rsync additional options] [-e rsync_exclude_argument ...] {src_path} {dest_path} {dst_name} [prepare | create ref ... | remove ref | list]
 
 Arguments:
 -c       - do not use hard links, copy instead
+-o       - pass additional options to rsync
 -e exclude - rsync exclude argument (can be set multiple times)
 src_path - path to source file or directory
 dst_path - path to backup directory
@@ -38,6 +39,7 @@ vi runBackup.sh
 set -e
 
 /usr/local/bin/snap_handler_rsync.sh \
+    -o '-a --chmod=D0770' \
     -e '/.cabal/' \
     -e '/.cache/' \
     -e '/mirror/' \
@@ -68,4 +70,3 @@ crontab -e
 ```bash
 ls -l /opt/backup/$(whoami)
 ```
-

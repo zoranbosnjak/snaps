@@ -33,14 +33,19 @@ set -u
 
 use_links="yes";
 
-usage="Usage: $(basename $0) [-c] [-e rsync exclude ...] {src_path} {dst_path} {dst_name} [prepare | create ref [ref-1 ...] | remove ref | list]"
+rsync_opts="";
+
+usage="Usage: $(basename $0) [-c] [-o rsync additional options] [-e rsync exclude ...] {src_path} {dst_path} {dst_name} [prepare | create ref [ref-1 ...] | remove ref | list]"
 
 excludes=()
 # handle -e {exclude} ... options
-while getopts 'ce:' OPTION; do
+while getopts 'co:e:' OPTION; do
     case "$OPTION" in
         c)
             use_links="no";
+            ;;
+        o)
+            rsync_opts=("$OPTARG")
             ;;
         e)
             excludes+=("$OPTARG")
@@ -90,7 +95,7 @@ case $action in
             exit 1
         fi
 
-        cmd="rsync -a $exclude"
+        cmd="rsync $rsync_opts $exclude"
         # no history
         if [[ $use_links = "no" || $# -eq 0 ]]; then
             $cmd $srcPath $dst
